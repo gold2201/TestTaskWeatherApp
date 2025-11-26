@@ -177,9 +177,39 @@ class HealthCheckView(APIView):
             db_status = f"unhealthy: {str(e)}"
 
         api_status = "not_checked"
+        try:
+            import requests
+            from django.conf import settings
+
+            if settings.OPENWEATHER_API_KEY:
+                test_response = requests.get(
+                    "https://api.openweathermap.org/data/2.5/weather",
+                    params={
+                        "q": "London",
+                        "appid": settings.OPENWEATHER_API_KEY,
+                        "units": "metric"
+                    },
+                    timeout=3
+                )
+
+                if test_response.status_code == 200:
+                    api_status = "healthy"
+                elif test_response.status_code == 401:
+                    api_status = "unhealthy: invalid API key"
+                else:
+                    api_status = f"unhealthy: HTTP {test_response.status_code}"
+            else:
+                api_status = "unhealthy: API key not configured"
+
+        except requests.exceptions.Timeout:
+            api_status = "unhealthy: timeout"
+        except requests.exceptions.ConnectionError:
+            api_status = "unhealthy: connection failed"
+        except Exception as e:
+            api_status = f"unhealthy: {str(e)}"
 
         health_data = {
-            "status": "healthy" if db_status == "healthy" else "degraded",
+            "status": "healthy" if db_status == "healthy" and api_status == "healthy" else "degraded",
             "timestamp": datetime.now().isoformat(),
             "components": {
                 "database": db_status,
@@ -187,7 +217,7 @@ class HealthCheckView(APIView):
             }
         }
 
-        status_code = status.HTTP_200_OK if db_status == "healthy" else status.HTTP_503_SERVICE_UNAVAILABLE
+        status_code = status.HTTP_200_OK if health_data["status"] == "healthy" else status.HTTP_503_SERVICE_UNAVAILABLE
 
         return Response(health_data, status=status_code)
 
