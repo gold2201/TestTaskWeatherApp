@@ -143,7 +143,6 @@ class WeatherQueryViewSet(WeatherQueryFilter, viewsets.ModelViewSet):
             ['City', 'Country', 'Temperature', 'Feels Like', 'Weather', 'Description', 'Query Timestamp', 'Units',
              'Served From Cache'])
 
-        # Используем values_list для большей эффективности
         for query in queryset:
             writer.writerow([
                 query.location.city,
@@ -195,7 +194,6 @@ class HealthCheckView(APIView):
 
 class WeatherFormView(TemplateView):
     template_name = 'weather/weather_form.html'
-
 
 class WeatherHistoryView(TemplateView):
     template_name = 'weather/weather_history.html'

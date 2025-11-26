@@ -1,7 +1,10 @@
 from datetime import timedelta
 from django.utils import timezone
 from django.db import transaction
+from django.core.cache import cache
 import logging
+import pickle
+
 from ..models import WeatherQuery, Location, WeatherData
 from .weather_api_service import OpenWeatherAPI
 from .rate_limiter import check_rate_limit, RateLimitExceeded
@@ -16,7 +19,24 @@ def get_weather_for_city(city_name: str, units: str = "C", ip_address: str = Non
     now = timezone.now()
     normalized_city = city_name.strip().lower()
 
-    logger.info(f"Looking for cached data: city={normalized_city}, units={units}")
+    redis_cache_key = f"weather:{normalized_city}:{units}"
+
+    cached_data = cache.get(redis_cache_key)
+    if cached_data:
+        logger.info(f"Redis cache HIT: {redis_cache_key}")
+        location, weather_data = pickle.loads(cached_data)
+
+        new_query = WeatherQuery.objects.create(
+            location=location,
+            weather_data=weather_data,
+            units=units,
+            ip_address=ip_address,
+            served_from_cache=True,
+            raw_response=None,
+        )
+        return new_query
+
+    logger.info(f"Redis cache MISS: {normalized_city}, units={units}")
 
     last_query = WeatherQuery.objects.filter(
         location__city__iexact=normalized_city,
@@ -25,7 +45,11 @@ def get_weather_for_city(city_name: str, units: str = "C", ip_address: str = Non
     ).select_related('location', 'weather_data').order_by('-timestamp').first()
 
     if last_query and last_query.weather_data:
-        logger.info(f"Cache HIT: city={normalized_city}, units={units}")
+        logger.info(f"DB cache HIT: {normalized_city}, units={units}")
+
+        cache_data = pickle.dumps((last_query.location, last_query.weather_data))
+        cache.set(redis_cache_key, cache_data, timeout=300)
+
         new_query = WeatherQuery.objects.create(
             location=last_query.location,
             weather_data=last_query.weather_data,
@@ -36,7 +60,7 @@ def get_weather_for_city(city_name: str, units: str = "C", ip_address: str = Non
         )
         return new_query
 
-    logger.info(f"Cache MISS: city={normalized_city}, units={units}. Fetching from API...")
+    logger.info(f"Cache MISS: {normalized_city}, units={units}. Fetching from API...")
 
     try:
         raw_data = OpenWeatherAPI.fetch_weather(city_name, units)
@@ -44,8 +68,6 @@ def get_weather_for_city(city_name: str, units: str = "C", ip_address: str = Non
 
         location_data = OpenWeatherAPI.normalize_location_data(raw_data)
         weather_data_dict = OpenWeatherAPI.normalize_weather_data(raw_data)
-
-        logger.info(f"Normalized data: temp={weather_data_dict.get('temperature')}")
 
         with transaction.atomic():
             location_city = location_data["city"].lower().strip() if location_data.get("city") else normalized_city
@@ -61,10 +83,7 @@ def get_weather_for_city(city_name: str, units: str = "C", ip_address: str = Non
                 }
             )
 
-            logger.info(f"Location: {'created' if created else 'exists'} - {location.city}")
-
             weather_data = WeatherData.objects.create(**weather_data_dict)
-            logger.info(f"WeatherData created: {weather_data.temperature}°")
 
             new_query = WeatherQuery.objects.create(
                 location=location,
@@ -75,7 +94,10 @@ def get_weather_for_city(city_name: str, units: str = "C", ip_address: str = Non
                 raw_response=raw_data,
             )
 
-            logger.info(f"WeatherQuery created: {new_query.id}")
+            cache_data = pickle.dumps((location, weather_data))
+            cache.set(redis_cache_key, cache_data, timeout=300)
+
+            logger.info(f"Data saved to Redis: {redis_cache_key}")
 
         return new_query
 
