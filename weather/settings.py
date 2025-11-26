@@ -109,42 +109,93 @@ STATICFILES_DIRS = [
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'simple': {
-            'format': '{levelname} {asctime} {name} {message}',
-            'style': '{',
+    "version": 1,
+    "disable_existing_loggers": False,
+
+    "formatters": {
+        "structured": {
+            "format": 'timestamp=%(asctime)s level=%(levelname)s module=%(name)s message="%(message)s" ip=%(ip)s user=%(user)s event=%(event)s city=%(city)s units=%(units)s served_from_cache=%(served_from_cache)s latency=%(latency)s error=%(error)s',
+            "style": "%",
+        },
+        "json": {
+            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "format": """
+                {
+                    "timestamp": "%(asctime)s",
+                    "level": "%(levelname)s",
+                    "module": "%(name)s", 
+                    "message": "%(message)s",
+                    "ip": "%(ip)s",
+                    "user": "%(user)s",
+                    "event": "%(event)s",
+                    "city": "%(city)s",
+                    "units": "%(units)s",
+                    "served_from_cache": "%(served_from_cache)s",
+                    "latency": "%(latency)s",
+                    "error": "%(error)s"
+                }
+            """,
         },
     },
-    'handlers': {
-        'console': {
-            'level': 'INFO',
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple'
-        },
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'weather.log',
-            'formatter': 'simple',
+
+    "filters": {
+        "add_extra_fields": {
+            "()": "weather_api.logging_filters.ExtraFieldsFilter",
         },
     },
-    'root': {
-        'handlers': ['console', 'file'],
-        'level': 'INFO',
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': False,
+
+    "handlers": {
+        "console_structured": {
+            "class": "logging.StreamHandler",
+            "formatter": "structured",
+            "filters": ["add_extra_fields"],
         },
-        'weather': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': False,
+
+        "file_structured": {
+            "class": "logging.FileHandler",
+            "filename": LOG_DIR / "structured_weather.log",
+            "formatter": "structured",
+            "filters": ["add_extra_fields"],
+        },
+
+        "file_json": {
+            "class": "logging.FileHandler",
+            "filename": LOG_DIR / "json_weather.log",
+            "formatter": "json",
+            "filters": ["add_extra_fields"],
+        },
+
+        "errors_structured": {
+            "class": "logging.FileHandler",
+            "filename": LOG_DIR / "errors_structured.log",
+            "formatter": "structured",
+            "level": "ERROR",
+            "filters": ["add_extra_fields"],
+        },
+    },
+
+    "loggers": {
+        "django": {
+            "handlers": ["console_structured"],
+            "level": "INFO",
+            "propagate": False,
+        },
+
+        "weather": {
+            "handlers": ["console_structured", "file_structured", "file_json", "errors_structured"],
+            "level": "INFO",
+            "propagate": False,
+        },
+
+        "django.request": {
+            "handlers": ["errors_structured", "console_structured"],
+            "level": "ERROR",
+            "propagate": False,
         },
     },
 }
+

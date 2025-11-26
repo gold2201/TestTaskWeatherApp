@@ -2,6 +2,10 @@ import requests
 from django.conf import settings
 
 class OpenWeatherAPI:
+    """
+    Adapter for OpenWeatherMap API with error handling and data normalization.
+    Converts API-specific response format to application domain model.
+    """
 
     BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
 

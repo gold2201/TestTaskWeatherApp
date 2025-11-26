@@ -2,6 +2,10 @@ from django.db import models
 from django.utils import timezone
 
 class Location(models.Model):
+    """
+    Normalized location data to prevent duplicates.
+    Unique constraint ensures same city+country appears only once.
+    """
     city = models.CharField(max_length=100, db_index=True)
     country_code = models.CharField(max_length=2, blank=True)
     latitude = models.FloatField(null=True, blank=True)
@@ -12,7 +16,7 @@ class Location(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['city', 'country_code'],
-                name='unique_city_country'
+                name='unique_city_country' # Prevents duplicate locations
             )
         ]
 
@@ -41,6 +45,10 @@ class WeatherData(models.Model):
 
 
 class WeatherQuery(models.Model):
+    """
+    Main query log tracking all weather requests with metadata.
+    Stores IP for rate limiting and cache status for analytics.
+    """
     UNIT_CHOICES = [
         ('C', 'Celsius'),
         ('F', 'Fahrenheit'),
@@ -54,6 +62,7 @@ class WeatherQuery(models.Model):
         blank=True,
     )
 
+    # Query metadata
     timestamp = models.DateTimeField(default=timezone.now, db_index=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     units = models.CharField(max_length=1, choices=UNIT_CHOICES, default='C')
@@ -65,6 +74,7 @@ class WeatherQuery(models.Model):
         db_table = 'weather_queries'
         ordering = ['-timestamp']
         indexes = [
+            # Optimized for common query patterns
             models.Index(fields=['location', 'timestamp']),
             models.Index(fields=['timestamp', 'served_from_cache']),
             models.Index(fields=['ip_address', 'timestamp']),
