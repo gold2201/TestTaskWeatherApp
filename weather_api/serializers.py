@@ -66,8 +66,13 @@ class WeatherQueryListSerializer(serializers.ModelSerializer):
 
 
 class WeatherQueryCreateSerializer(serializers.Serializer):
-    city = serializers.CharField(max_length=100)
+    city = serializers.CharField(max_length=100, min_length=1)
     units = serializers.ChoiceField(choices=["C", "F"], default="C")
 
     def validate_city(self, value):
-        return value.strip().lower()
+        value = value.strip().lower()
+        if len(value) < 1:
+            raise serializers.ValidationError("City name cannot be empty")
+        if len(value) > 100:
+            raise serializers.ValidationError("City name too long")
+        return value

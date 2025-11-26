@@ -19,7 +19,7 @@ from .serializers import (
     WeatherQueryListSerializer
 )
 from .services.cash_service import get_weather_for_city
-from .services.rate_limiter import check_rate_limit, RateLimitExceeded
+from .services.rate_limiter import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -133,17 +133,17 @@ class WeatherQueryViewSet(WeatherQueryFilter, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def export_csv(self, request):
-        queryset = self.get_queryset()
+        queryset = self.get_queryset().select_related('location', 'weather_data')
 
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="weather_history.csv"'
 
         writer = csv.writer(response)
-        writer.writerow([
-            'City', 'Country', 'Temperature', 'Feels Like', 'Weather',
-            'Description', 'Query Timestamp', 'Units', 'Served From Cache'
-        ])
+        writer.writerow(
+            ['City', 'Country', 'Temperature', 'Feels Like', 'Weather', 'Description', 'Query Timestamp', 'Units',
+             'Served From Cache'])
 
+        # Используем values_list для большей эффективности
         for query in queryset:
             writer.writerow([
                 query.location.city,

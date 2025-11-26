@@ -1,6 +1,8 @@
+import ipaddress
 from datetime import timedelta
 from django.utils import timezone
 from django.core.exceptions import PermissionDenied
+
 from ..models import WeatherQuery
 
 RATE_LIMIT = 30
@@ -12,6 +14,11 @@ class RateLimitExceeded(Exception):
 def check_rate_limit(ip: str):
     if not ip:
         raise RateLimitExceeded("IP address missing")
+
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        raise RateLimitExceeded("Invalid IP address")
 
     now = timezone.now()
 
