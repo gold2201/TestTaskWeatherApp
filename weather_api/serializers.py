@@ -7,6 +7,7 @@ class LocationSerializer(serializers.ModelSerializer):
         model = Location
         fields = ["city", "country_code", "latitude", "longitude"]
 
+
 class WeatherDataSerializer(serializers.ModelSerializer):
     class Meta:
         model = WeatherData
@@ -22,6 +23,7 @@ class WeatherDataSerializer(serializers.ModelSerializer):
             "description",
             "icon",
         ]
+
 
 class WeatherQuerySerializer(serializers.ModelSerializer):
     location = LocationSerializer()
@@ -40,13 +42,32 @@ class WeatherQuerySerializer(serializers.ModelSerializer):
             "weather_data",
         ]
 
+
+class WeatherQueryListSerializer(serializers.ModelSerializer):
+    city = serializers.CharField(source='location.city')
+    country_code = serializers.CharField(source='location.country_code')
+    temperature = serializers.FloatField(source='weather_data.temperature')
+    main_weather = serializers.CharField(source='weather_data.main_weather')
+    description = serializers.CharField(source='weather_data.description')
+
+    class Meta:
+        model = WeatherQuery
+        fields = [
+            "id",
+            "city",
+            "country_code",
+            "temperature",
+            "main_weather",
+            "description",
+            "timestamp",
+            "units",
+            "served_from_cache",
+        ]
+
+
 class WeatherQueryCreateSerializer(serializers.Serializer):
-    """
-    Для POST-запроса: пользователь вводит только city и units.
-    WeatherData и Location создаются автоматически.
-    """
-    city: str = serializers.CharField(max_length=100)
-    units: str = serializers.ChoiceField(choices=["C", "F"], default="C")
+    city = serializers.CharField(max_length=100)
+    units = serializers.ChoiceField(choices=["C", "F"], default="C")
 
     def validate_city(self, value):
-        return value.strip().lower()  # нормализуем
+        return value.strip().lower()

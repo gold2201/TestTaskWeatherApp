@@ -7,24 +7,27 @@ class OpenWeatherAPI:
 
     @staticmethod
     def fetch_weather(city: str, units: str = "C") -> dict:
+        try:
+            units_param = "metric" if units == "C" else "imperial"
 
-        units_param = "metric" if units == "C" else "imperial"
+            params = {
+                "q": city,
+                "appid": settings.OPENWEATHER_API_KEY,
+                "units": units_param,
+                "lang": "en",
+            }
 
-        params = {
-            "q": city,
-            "appid": settings.OPENWEATHER_API_KEY,
-            "units": units_param,
-            "lang": "en",
-        }
+            response = requests.get(OpenWeatherAPI.BASE_URL, params=params, timeout=5)
 
-        response = requests.get(OpenWeatherAPI.BASE_URL, params=params, timeout=5)
+            if response.status_code == 404:
+                raise ValueError("City not found")
 
-        if response.status_code == 404:
-            raise ValueError("City not found")
+            response.raise_for_status()
 
-        response.raise_for_status()
+            return response.json()
 
-        return response.json()
+        except requests.RequestException as e:
+            raise ValueError(f"Weather API error: {str(e)}")
 
     @staticmethod
     def normalize_weather_data(data: dict) -> dict:

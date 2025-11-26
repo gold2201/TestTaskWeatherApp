@@ -3,7 +3,6 @@ from django.utils import timezone
 
 
 class Location(models.Model):
-    """Город + страна + координаты (нормализация)"""
     city = models.CharField(max_length=100, db_index=True)
     country_code = models.CharField(max_length=2, blank=True)
     latitude = models.FloatField(null=True, blank=True)
@@ -23,7 +22,6 @@ class Location(models.Model):
 
 
 class WeatherData(models.Model):
-    """Снимок погодных данных на момент запроса"""
     temperature = models.FloatField()
     feels_like = models.FloatField(null=True, blank=True)
     pressure = models.IntegerField(null=True, blank=True)
@@ -44,7 +42,6 @@ class WeatherData(models.Model):
 
 
 class WeatherQuery(models.Model):
-    """Запрос пользователя + метаданные + ссылка на погоду"""
     UNIT_CHOICES = [
         ('C', 'Celsius'),
         ('F', 'Fahrenheit'),
@@ -70,7 +67,8 @@ class WeatherQuery(models.Model):
         ordering = ['-timestamp']
         indexes = [
             models.Index(fields=['location', 'timestamp']),
-            models.Index(fields=['timestamp']),
+            models.Index(fields=['timestamp', 'served_from_cache']),
+            models.Index(fields=['ip_address', 'timestamp']),
         ]
 
     def __str__(self):

@@ -35,8 +35,8 @@ def get_weather_for_city(city_name: str, units: str = "C", ip_address: str = Non
 
     with transaction.atomic():
         location, _ = Location.objects.get_or_create(
-            city=location_data["city"],
-            country_code=location_data.get("country_code"),
+            city=location_data["city"].lower().strip(),
+            country_code=location_data.get("country_code", ""),
             defaults=location_data
         )
 
