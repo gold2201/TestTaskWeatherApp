@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Weather App - Query History</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .nav-links {
+            margin-bottom: 20px;
+        }
+        .nav-links a {
+            color: #007bff;
+            text-decoration: none;
+            margin-right: 15px;
+            font-weight: bold;
+        }
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+        .filters {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .filter-group {
+            display: inline-block;
+            margin-right: 20px;
+            margin-bottom: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+        input, select, button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .export-btn {
+            background: #28a745;
+        }
+        .export-btn:hover {
+            background: #218838;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: bold;
+        }
+        tr:hover {
+            background: #f5f5f5;
+        }
+        .cache-badge {
+            background: #ffc107;
+            color: #856404;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        .pagination {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .pagination button {
+            margin: 0 5px;
+            padding: 8px 15px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav-links">
+            <a href="{% url 'weather-form' %}">Get Weather</a>
+            <a href="{% url 'weather-history' %}">Query History</a>
+            <a href="/api/weather/queries/">API Documentation</a>
+        </div>
+
+        <h1>📊 Weather Query History</h1>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label for="cityFilter">City:</label>
+                <input type="text" id="cityFilter" placeholder="Filter by city...">
+            </div>
+            <div class="filter-group">
+                <label for="dateFrom">From Date:</label>
+                <input type="date" id="dateFrom">
+            </div>
+            <div class="filter-group">
+                <label for="dateTo">To Date:</label>
+                <input type="date" id="dateTo">
+            </div>
+            <div class="filter-group">
+                <label>&nbsp;</label>
+                <button onclick="loadHistory()">Apply Filters</button>
+                <button onclick="clearFilters()">Clear</button>
+                <button class="export-btn" onclick="exportToCSV()">Export CSV</button>
+            </div>
+        </div>
+
+        <div id="historyTable">
+            <div class="loading">Loading history...</div>
+        </div>
+
+        <div class="pagination" id="pagination"></div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        const pageSize = 10;
+
+        async function loadHistory(page = 1) {
+            currentPage = page;
+
+            const city = document.getElementById('cityFilter').value;
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
+
+            let url = `/api/weather/queries/?page=${page}&page_size=${pageSize}`;
+
+            if (city) url += `&city=${encodeURIComponent(city)}`;
+            if (dateFrom) url += `&date_from=${dateFrom}`;
+            if (dateTo) url += `&date_to=${dateTo}`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayHistory(data);
+                } else {
+                    document.getElementById('historyTable').innerHTML = '<div class="error">Error loading history</div>';
+                }
+            } catch (error) {
+                document.getElementById('historyTable').innerHTML = `<div class="error">Network error: ${error.message}</div>`;
+            }
+        }
+
+        function displayHistory(data) {
+            const table = document.getElementById('historyTable');
+
+            if (data.results.length === 0) {
+                table.innerHTML = '<div class="loading">No queries found</div>';
+                document.getElementById('pagination').innerHTML = '';
+                return;
+            }
+
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>City</th>
+                            <th>Temperature</th>
+                            <th>Weather</th>
+                            <th>Units</th>
+                            <th>Timestamp</th>
+                            <th>Cache</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            data.results.forEach(query => {
+                html += `
+                    <tr>
+                        <td>${query.city}, ${query.country_code}</td>
+                        <td>${query.temperature}°${query.units}</td>
+                        <td>${query.main_weather} - ${query.description}</td>
+                        <td>${query.units}</td>
+                        <td>${new Date(query.timestamp).toLocaleString()}</td>
+                        <td>${query.served_from_cache ? '<span class="cache-badge">Cached</span>' : 'Live'}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            table.innerHTML = html;
+
+            displayPagination(data);
+        }
+
+        function displayPagination(data) {
+            const pagination = document.getElementById('pagination');
+            const totalPages = Math.ceil(data.count / pageSize);
+
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+
+            if (currentPage > 1) {
+                html += `<button onclick="loadHistory(${currentPage - 1})">Previous</button>`;
+            }
+
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === currentPage) {
+                    html += `<button style="background: #0056b3;">${i}</button>`;
+                } else {
+                    html += `<button onclick="loadHistory(${i})">${i}</button>`;
+                }
+            }
+
+            if (currentPage < totalPages) {
+                html += `<button onclick="loadHistory(${currentPage + 1})">Next</button>`;
+            }
+
+            pagination.innerHTML = html;
+        }
+
+        function clearFilters() {
+            document.getElementById('cityFilter').value = '';
+            document.getElementById('dateFrom').value = '';
+            document.getElementById('dateTo').value = '';
+            loadHistory(1);
+        }
+
+        function exportToCSV() {
+            const city = document.getElementById('cityFilter').value;
+            const dateFrom = document.getElementById('dateFrom').value;
+            const dateTo = document.getElementById('dateTo').value;
+
+            let url = `/api/weather/queries/export_csv/`;
+            let params = [];
+
+            if (city) params.push(`city=${encodeURIComponent(city)}`);
+            if (dateFrom) params.push(`date_from=${dateFrom}`);
+            if (dateTo) params.push(`date_to=${dateTo}`);
+
+            if (params.length > 0) {
+                url += '?' + params.join('&');
+            }
+
+            window.location.href = url;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadHistory(1);
+        });
+    </script>
+</body>
+</html>

@@ -4,6 +4,7 @@ from datetime import datetime
 
 from django.http import HttpResponse
 from django.db import connection
+from django.views.generic import TemplateView
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -18,7 +19,7 @@ from .serializers import (
     WeatherQueryListSerializer
 )
 from .services.cash_service import get_weather_for_city
-from .services.rate_limiter import RateLimitExceeded
+from .services.rate_limiter import check_rate_limit, RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -77,14 +78,8 @@ class WeatherQueryViewSet(WeatherQueryFilter, viewsets.ModelViewSet):
             ip_address = self.get_client_ip()
 
             logger.info(
-                f"weather_request_start city={city} units={units} "
-                f"ip={ip_address}",
-                extra={
-                    'city': city,
-                    'units': units,
-                    'ip_address': ip_address,
-                    'event': 'weather_request_start'
-                }
+                f"weather_request_start city={city} units={units} ip={ip_address}",
+                extra={'city': city, 'units': units, 'ip_address': ip_address, 'event': 'weather_request_start'}
             )
 
             try:
@@ -98,14 +93,12 @@ class WeatherQueryViewSet(WeatherQueryFilter, viewsets.ModelViewSet):
 
                 api_latency = (datetime.now() - start_time).total_seconds()
                 logger.info(
-                    f"weather_request_end city={city} "
-                    f"served_from_cache={weather_query.served_from_cache} "
-                    f"latency={api_latency:.2f}s",
+                    f"weather_request_success city={city} served_from_cache={weather_query.served_from_cache} latency={api_latency:.2f}s",
                     extra={
                         'city': city,
                         'served_from_cache': weather_query.served_from_cache,
                         'latency': api_latency,
-                        'event': 'weather_request_end'
+                        'event': 'weather_request_success'
                     }
                 )
 
@@ -113,45 +106,24 @@ class WeatherQueryViewSet(WeatherQueryFilter, viewsets.ModelViewSet):
                 return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
             except RateLimitExceeded as e:
-                logger.warning(
-                    f"rate_limit_exceeded ip={ip_address}",
-                    extra={
-                        'ip_address': ip_address,
-                        'event': 'rate_limit_exceeded'
-                    }
-                )
+                logger.warning(f"rate_limit_exceeded ip={ip_address}",
+                               extra={'ip_address': ip_address, 'event': 'rate_limit_exceeded'})
                 return Response(
-                    {
-                        "error": "Rate limit exceeded",
-                        "message": "Please try again in a minute.",
-                        "detail": str(e)
-                    },
+                    {"error": "Rate limit exceeded", "message": "Please try again in a minute.", "detail": str(e)},
                     status=status.HTTP_429_TOO_MANY_REQUESTS
                 )
 
             except ValueError as e:
-                logger.error(
-                    f"weather_request_error error={str(e)} city={city}",
-                    extra={
-                        'error': str(e),
-                        'city': city,
-                        'event': 'weather_request_error'
-                    }
-                )
+                logger.error(f"weather_request_city_not_found error={str(e)} city={city}",
+                             extra={'error': str(e), 'city': city, 'event': 'weather_request_city_not_found'})
                 return Response(
                     {"error": "City not found", "detail": str(e)},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
             except Exception as e:
-                logger.error(
-                    f"weather_request_error error={str(e)} city={city}",
-                    extra={
-                        'error': str(e),
-                        'city': city,
-                        'event': 'weather_request_error'
-                    }
-                )
+                logger.error(f"weather_request_internal_error error={str(e)} city={city}",
+                             extra={'error': str(e), 'city': city, 'event': 'weather_request_internal_error'})
                 return Response(
                     {"error": "Internal server error", "detail": str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -161,7 +133,6 @@ class WeatherQueryViewSet(WeatherQueryFilter, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def export_csv(self, request):
-
         queryset = self.get_queryset()
 
         response = HttpResponse(content_type='text/csv')
@@ -198,7 +169,6 @@ class WeatherQueryViewSet(WeatherQueryFilter, viewsets.ModelViewSet):
 
 
 class HealthCheckView(APIView):
-
     def get(self, request):
         try:
             with connection.cursor() as cursor:
@@ -222,3 +192,55 @@ class HealthCheckView(APIView):
 
         return Response(health_data, status=status_code)
 
+
+class WeatherFormView(TemplateView):
+    template_name = 'weather/weather_form.html'
+
+
+class WeatherHistoryView(TemplateView):
+    template_name = 'weather/weather_history.html'
+
+
+class WeatherDataAPIView(APIView):
+    def post(self, request):
+        serializer = WeatherQueryCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            city = serializer.validated_data['city']
+            units = serializer.validated_data['units']
+            ip_address = self.get_client_ip(request)
+
+            try:
+                weather_query = get_weather_for_city(
+                    city_name=city,
+                    units=units,
+                    ip_address=ip_address
+                )
+
+                response_serializer = WeatherQuerySerializer(weather_query)
+                return Response(response_serializer.data)
+
+            except RateLimitExceeded:
+                return Response(
+                    {"error": "Rate limit exceeded. Please try again later."},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
+            except ValueError as e:
+                return Response(
+                    {"error": str(e)},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            except Exception as e:
+                return Response(
+                    {"error": "Internal server error"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get_client_ip(self, request):
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip

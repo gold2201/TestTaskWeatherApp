@@ -1,7 +1,6 @@
 from django.db import models
 from django.utils import timezone
 
-
 class Location(models.Model):
     city = models.CharField(max_length=100, db_index=True)
     country_code = models.CharField(max_length=2, blank=True)
